@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HITL Agentic Sprint — Research Dashboard</title>
+    <meta name="description" content="HITL agentic sprint team with real LLM agents and optimal intervention threshold research dashboard." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <!-- Header -->
+    <header id="app-header">
+      <div class="header-left">
+        <div class="header-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="12" stroke="url(#grad1)" stroke-width="2.5" />
+            <circle cx="14" cy="14" r="6" fill="url(#grad1)" opacity="0.6" />
+            <circle cx="14" cy="14" r="3" fill="url(#grad1)" />
+            <defs>
+              <linearGradient id="grad1" x1="0" y1="0" x2="28" y2="28">
+                <stop offset="0%" stop-color="#6366f1" />
+                <stop offset="100%" stop-color="#a78bfa" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div>
+          <h1>HITL Agentic Sprint</h1>
+          <p class="header-subtitle">Selective Autonomy Research Dashboard</p>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="tab-bar" id="tab-bar">
+          <button class="tab-btn active" data-tab="sprint" id="tab-sprint">🚀 Sprint Runner</button>
+          <button class="tab-btn" data-tab="research" id="tab-research">📊 Research Dashboard</button>
+          <button class="tab-btn" data-tab="rl" id="tab-rl">🧠 RL Trainer</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="ws-indicator disconnected" id="ws-status" title="Server disconnected">●</div>
+        <div class="header-stat" id="stat-scenarios">
+          <span class="stat-value">0</span>
+          <span class="stat-label">Scenarios</span>
+        </div>
+        <div class="header-stat" id="stat-optimal">
+          <span class="stat-value">—</span>
+          <span class="stat-label">Optimal τ</span>
+        </div>
+        <div class="header-stat" id="stat-utility">
+          <span class="stat-value">—</span>
+          <span class="stat-label">Max Utility</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- TAB 1: Sprint Runner                       -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="sprint-tab" class="tab-content active">
+      <div id="sprint-layout">
+        <!-- Left: Control Panel + Pipeline -->
+        <aside id="sprint-sidebar">
+          <!-- Requirement Input -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 0h10a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1zm4 5.5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H7zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2.5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5z"/></svg>
+              Project Requirement
+            </h3>
+            <textarea id="sprint-requirement" class="sprint-input" rows="4" placeholder="Describe your project... e.g., 'Build a todo list app with user authentication and real-time sync'"></textarea>
+            <button id="btn-start-sprint" class="btn btn-primary btn-large">🚀 Start Sprint</button>
+          </div>
+
+          <!-- Threshold & Weights (shared with research tab) -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 1zm0 10a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 11zm7-3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM4 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 4 8z"/><circle cx="8" cy="8" r="3"/></svg>
+              Uncertainty Weights
+            </h3>
+            <div class="slider-group">
+              <div class="slider-row">
+                <label>w₁ Semantic</label>
+                <input type="range" id="weight-semantic" min="0" max="100" value="40" />
+                <span class="slider-value" id="weight-semantic-val">0.40</span>
+              </div>
+              <div class="slider-row">
+                <label>w₂ Entropy</label>
+                <input type="range" id="weight-entropy" min="0" max="100" value="35" />
+                <span class="slider-value" id="weight-entropy-val">0.35</span>
+              </div>
+              <div class="slider-row">
+                <label>w₃ Reflection</label>
+                <input type="range" id="weight-reflection" min="0" max="100" value="25" />
+                <span class="slider-value" id="weight-reflection-val">0.25</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 11a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3zm5-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2z"/></svg>
+              Threshold Control
+            </h3>
+            <div class="slider-group">
+              <div class="slider-row threshold-slider-row">
+                <label>Threshold (τ)</label>
+                <input type="range" id="threshold-slider" min="0" max="100" value="15" step="1" />
+                <span class="slider-value accent" id="threshold-val">0.15</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rejector Score -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0L10 6H16L11 9.5L13 16L8 12L3 16L5 9.5L0 6H6L8 0Z"/></svg>
+              Current Rejector Score
+            </h3>
+            <div id="rejector-score" class="rejector-score-display">
+              <div class="rejector-placeholder">Waiting for sprint...</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center: Pipeline + Agent Outputs -->
+        <main id="sprint-main">
+          <!-- Pipeline Visualization -->
+          <div class="pipeline-card">
+            <h3>Agent Pipeline</h3>
+            <div class="pipeline-container" id="pipeline-viz">
+              <div class="pipeline-row pipeline-row-1">
+                <div class="pipeline-node node-user state-idle" id="node-user">
+                  <div class="node-icon">👤</div>
+                  <div class="node-label">User</div>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-node node-agent state-idle" id="node-systemArchitect">
+                  <div class="node-icon">🏗️</div>
+                  <div class="node-label">System Architect</div>
+                  <div class="node-status" id="status-systemArchitect"></div>
+                </div>
+                <div class="pipeline-arrow">→</div>
+                <div class="pipeline-node node-rejector state-idle" id="node-rejector">
+                  <div class="node-icon">◆</div>
+                  <div class="node-label">Rejector</div>
+                  <div class="node-status" id="status-rejector"></div>
+                </div>
+              </div>
+
+              <div class="pipeline-branch-row">
+                <div class="pipeline-node node-action state-idle" id="node-automate">
+                  <div class="node-icon">⚡</div>
+                  <div class="node-label">Automation</div>
+                </div>
+                <div class="pipeline-node node-action node-collab state-idle" id="node-collaborate">
+                  <div class="node-icon">🤝</div>
+                  <div class="node-label">Collaboration</div>
+                </div>
+              </div>
+
+              <div class="pipeline-row pipeline-row-3">
+                <div class="pipeline-node node-agent state-idle" id="node-orchestrator">
+                  <div class="node-icon">📋</div>
+                  <div class="node-label">Orchestrator</div>
+                  <div class="node-status" id="status-orchestrator"></div>
+                </div>
+              </div>
+
+              <div class="pipeline-row pipeline-row-4">
+                <div class="pipeline-node node-agent state-idle" id="node-frontendAgent">
+                  <div class="node-icon">🎨</div>
+                  <div class="node-label">Frontend Agent</div>
+                  <div class="node-status" id="status-frontendAgent"></div>
+                </div>
+                <div class="pipeline-node node-agent state-idle" id="node-backendAgent">
+                  <div class="node-icon">⚙️</div>
+                  <div class="node-label">Backend Agent</div>
+                  <div class="node-status" id="status-backendAgent"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rejector Decisions Table -->
+          <div class="table-card">
+            <div class="table-header-bar">
+              <h3>Rejector Decisions</h3>
+              <div class="table-legend">
+                <span class="legend-item legend-tn">● Automated</span>
+                <span class="legend-item legend-fn">● Collaboration</span>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table id="rejector-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>U<sub>sem</sub></th>
+                    <th>U<sub>ent</sub></th>
+                    <th>U<sub>ref</sub></th>
+                    <th>U</th>
+                    <th>G</th>
+                    <th>Score</th>
+                    <th>Decision</th>
+                  </tr>
+                </thead>
+                <tbody id="rejector-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Agent Outputs -->
+          <div class="outputs-section">
+            <h3>Agent Outputs</h3>
+            <div id="agent-outputs" class="agent-outputs-container"></div>
+          </div>
+
+          <!-- Sprint Summary -->
+          <div id="sprint-summary" class="sprint-summary hidden"></div>
+        </main>
+
+        <!-- Right: Activity Log -->
+        <aside id="sprint-log-sidebar">
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 1h14v14H1V1zm1 1v12h12V2H2zm2 2h8v1H4V4zm0 3h8v1H4V7zm0 3h5v1H4v-1z"/></svg>
+              Activity Log
+            </h3>
+            <div id="activity-log" class="activity-log"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- TAB 2: Research Dashboard (existing)       -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="research-tab" class="tab-content">
+      <div id="app-layout">
+        <!-- Left Sidebar: Control Panel -->
+        <aside id="control-panel">
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 1zm0 10a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 11zm7-3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM4 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 4 8z"/><circle cx="8" cy="8" r="3"/></svg>
+              Uncertainty Weights
+            </h3>
+            <div class="slider-group">
+              <div class="slider-row">
+                <label>w₁ Semantic</label>
+                <input type="range" id="r-weight-semantic" min="0" max="100" value="40" />
+                <span class="slider-value" id="r-weight-semantic-val">0.40</span>
+              </div>
+              <div class="slider-row">
+                <label>w₂ Entropy</label>
+                <input type="range" id="r-weight-entropy" min="0" max="100" value="35" />
+                <span class="slider-value" id="r-weight-entropy-val">0.35</span>
+              </div>
+              <div class="slider-row">
+                <label>w₃ Reflection</label>
+                <input type="range" id="r-weight-reflection" min="0" max="100" value="25" />
+                <span class="slider-value" id="r-weight-reflection-val">0.25</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 11a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3zm5-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2z"/></svg>
+              Threshold Control
+            </h3>
+            <div class="slider-group">
+              <div class="slider-row threshold-slider-row">
+                <label>Threshold (τ)</label>
+                <input type="range" id="r-threshold-slider" min="0" max="100" value="15" step="1" />
+                <span class="slider-value accent" id="r-threshold-val">0.15</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0-1A6 6 0 1 0 8 2a6 6 0 0 0 0 12zM6.5 7.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm5 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-6.7 3.2a.5.5 0 0 1 .7-.1 4.5 4.5 0 0 0 5 0 .5.5 0 0 1 .6.8 5.5 5.5 0 0 1-6.2 0 .5.5 0 0 1-.1-.7z"/></svg>
+              Utility Function
+            </h3>
+            <div class="slider-group">
+              <div class="slider-row">
+                <label>λ (Human Cost)</label>
+                <input type="range" id="lambda-slider" min="0" max="100" value="50" />
+                <span class="slider-value" id="lambda-val">0.50</span>
+              </div>
+            </div>
+            <div class="formula-display">
+              <code>Utility = Quality − λ × HumanEffort</code>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 0h10a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1zm4 5.5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H7zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2.5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5z"/></svg>
+              Scenarios
+            </h3>
+            <div class="button-group">
+              <button id="btn-preset" class="btn btn-primary">Load Presets (20)</button>
+              <button id="btn-random" class="btn btn-secondary">Randomize (30)</button>
+              <button id="btn-mixed" class="btn btn-ghost">Mixed (50)</button>
+            </div>
+          </div>
+
+          <!-- Confusion Matrix -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm1 0v5h6.5V1H2a1 1 0 0 0-1 1zm0 6v6a1 1 0 0 0 1 1h5.5V8H1zm7.5 0v7H14a1 1 0 0 0 1-1V8H8.5zM15 7V2a1 1 0 0 0-1-1H8.5v6H15z"/></svg>
+              Confusion Matrix
+            </h3>
+            <div class="confusion-matrix" id="confusion-matrix">
+              <div class="cm-header"></div>
+              <div class="cm-header">Predicted<br/>Interrupt</div>
+              <div class="cm-header">Predicted<br/>Autonomous</div>
+              <div class="cm-header">Actual<br/>Needs HITL</div>
+              <div class="cm-cell tp" id="cm-tp">0</div>
+              <div class="cm-cell fn" id="cm-fn">0</div>
+              <div class="cm-header">Actual<br/>No HITL</div>
+              <div class="cm-cell fp" id="cm-fp">0</div>
+              <div class="cm-cell tn" id="cm-tn">0</div>
+            </div>
+            <div class="metrics-row" id="metrics-row">
+              <div class="metric">
+                <span class="metric-label">Precision</span>
+                <span class="metric-value" id="metric-precision">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Recall</span>
+                <span class="metric-value" id="metric-recall">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">F1</span>
+                <span class="metric-value" id="metric-f1">—</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center: Scenario Table + Charts -->
+        <main id="main-content">
+          <!-- Charts Section -->
+          <!-- Charts Section removed per user request -->
+          <div class="charts-grid" style="display: none;">
+            <canvas id="chart-interrupt"></canvas>
+            <canvas id="chart-error"></canvas>
+            <canvas id="chart-utility"></canvas>
+          </div>
+
+          <!-- Scenario Table -->
+          <div class="table-card">
+            <div class="table-header-bar">
+              <h3>Scenario Analysis</h3>
+              <div class="table-legend">
+                <span class="legend-item legend-tp">● Correct Interrupt</span>
+                <span class="legend-item legend-tn">● Correct Autonomous</span>
+                <span class="legend-item legend-fn">● Missed Intervention</span>
+                <span class="legend-item legend-fp">● Unnecessary Interrupt</span>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table id="scenario-table">
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th>Category</th>
+                    <th>U<sub>sem</sub></th>
+                    <th>U<sub>ent</sub></th>
+                    <th>U<sub>ref</sub></th>
+                    <th>U</th>
+                    <th>G</th>
+                    <th>Score</th>
+                    <th>Interrupt?</th>
+                    <th>Truth</th>
+                  </tr>
+                </thead>
+                <tbody id="scenario-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Deep Dive Modal (Research Tab) -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal-content">
+        <button id="modal-close" class="modal-close">&times;</button>
+        <div class="modal-header">
+          <h2 id="modal-title">Scenario Deep Dive</h2>
+          <span class="modal-category" id="modal-category"></span>
+        </div>
+        <div class="modal-body">
+          <div class="modal-charts-grid">
+            <div class="modal-chart-card">
+              <h4>Uncertainty Components</h4>
+              <canvas id="chart-radar"></canvas>
+            </div>
+            <div class="modal-chart-card">
+              <h4>Gravity Factors</h4>
+              <canvas id="chart-gravity-bar"></canvas>
+            </div>
+          </div>
+          <div class="modal-details-grid">
+            <div class="modal-detail-card">
+              <h4>Decision Options</h4>
+              <div id="modal-options" class="modal-options"></div>
+            </div>
+            <div class="modal-detail-card">
+              <h4>Confidence Distribution</h4>
+              <canvas id="chart-confidence" height="150"></canvas>
+            </div>
+            <div class="modal-detail-card">
+              <h4>Conflict Analysis</h4>
+              <div id="modal-conflicts" class="modal-conflicts"></div>
+            </div>
+            <div class="modal-detail-card">
+              <h4>Embedding Clusters</h4>
+              <canvas id="chart-embedding-scatter"></canvas>
+            </div>
+          </div>
+          <div class="modal-verdict" id="modal-verdict"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HITL Collaboration Modal (Sprint Tab) -->
+    <div id="hitl-modal" class="modal-overlay hidden">
+      <div class="modal-content hitl-modal-content">
+        <button id="hitl-close" class="modal-close">&times;</button>
+        <div class="modal-header hitl-header">
+          <h2>🤝 Human Review Required</h2>
+          <span class="hitl-agent-badge" id="hitl-agent-name"></span>
+        </div>
+        <div class="modal-body hitl-body">
+          <div class="hitl-alert">
+            <div class="hitl-alert-icon">⚠️</div>
+            <div class="hitl-alert-text">
+              The Rejector detected high uncertainty in this agent's output. 
+              Review the analysis below and provide feedback or approve to continue.
+            </div>
+          </div>
+
+          <div class="hitl-metrics-grid">
+            <div class="hitl-metric-card">
+              <span class="hitl-metric-label">Score (S = U × G)</span>
+              <span class="hitl-metric-value" id="hitl-score">—</span>
+            </div>
+            <div class="hitl-metric-card">
+              <span class="hitl-metric-label">Uncertainty (U)</span>
+              <span class="hitl-metric-value" id="hitl-uncertainty">—</span>
+            </div>
+            <div class="hitl-metric-card">
+              <span class="hitl-metric-label">Gravity (G)</span>
+              <span class="hitl-metric-value" id="hitl-gravity">—</span>
+            </div>
+          </div>
+
+          <div class="hitl-section">
+            <h4>Uncertainty Components</h4>
+            <div id="hitl-components" class="hitl-components"></div>
+          </div>
+
+          <div class="hitl-section">
+            <h4>Identified Conflicts</h4>
+            <div id="hitl-conflicts" class="hitl-conflicts-list"></div>
+          </div>
+
+          <div class="hitl-section">
+            <h4>Agent Output Preview</h4>
+            <pre id="hitl-output-preview" class="hitl-output-preview"></pre>
+          </div>
+
+          <div class="hitl-section">
+            <h4>Your Feedback (optional)</h4>
+            <textarea id="hitl-feedback" class="hitl-feedback-input" rows="3" placeholder="Provide guidance to revise the agent's output... (leave empty to approve as-is)"></textarea>
+          </div>
+
+          <div class="hitl-actions">
+            <button id="hitl-approve" class="btn btn-primary">✅ Approve & Continue</button>
+            <button id="hitl-revise" class="btn btn-secondary">📝 Revise with Feedback</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- TAB 3: RL Trainer                          -->
+    <!-- ═══════════════════════════════════════════ -->
+    <div id="rl-tab" class="tab-content">
+      <div id="rl-layout">
+        <!-- Left: Control Panel -->
+        <aside id="rl-sidebar">
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm0 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm-.5 3H9v1.5l-1.5 3H9V10H7V8.5l1.5-3H7V4z"/></svg>
+              Training Controls
+            </h3>
+            <div class="rl-control-group">
+              <label>Episodes</label>
+              <input type="number" id="rl-episodes" value="500" min="50" max="5000" step="50" class="rl-input" />
+            </div>
+            <div class="rl-control-group">
+              <label>Batch Size</label>
+              <input type="number" id="rl-batch-size" value="32" min="8" max="128" step="8" class="rl-input" />
+            </div>
+            <div class="rl-control-group">
+              <label>Learning Rate</label>
+              <input type="number" id="rl-lr" value="0.001" min="0.0001" max="0.1" step="0.0001" class="rl-input" />
+            </div>
+            <div class="rl-control-group">
+              <label>Discount (γ)</label>
+              <input type="number" id="rl-gamma" value="0.99" min="0.9" max="1" step="0.01" class="rl-input" />
+            </div>
+            <div class="rl-control-group">
+              <label>ε Decay</label>
+              <input type="number" id="rl-epsilon-decay" value="0.995" min="0.99" max="0.999" step="0.001" class="rl-input" />
+            </div>
+            <div class="rl-control-group">
+              <label>Speed</label>
+              <div class="slider-row">
+                <input type="range" id="rl-speed" min="1" max="100" value="80" />
+                <span class="slider-value" id="rl-speed-val">80%</span>
+              </div>
+            </div>
+            <div class="rl-button-group">
+              <button id="rl-btn-start" class="btn btn-primary btn-large">▶ Start Training</button>
+              <div class="rl-btn-row">
+                <button id="rl-btn-pause" class="btn btn-secondary" disabled>⏸ Pause</button>
+                <button id="rl-btn-reset" class="btn btn-ghost">↺ Reset</button>
+              </div>
+              <button id="rl-btn-apply" class="btn btn-primary" disabled>Apply to System</button>
+            </div>
+            <!-- Progress -->
+            <div class="rl-progress">
+              <div class="rl-progress-track">
+                <div class="rl-progress-bar" id="rl-progress-bar"></div>
+              </div>
+              <span class="rl-progress-text" id="rl-progress-text">Ready</span>
+            </div>
+            <div class="rl-param-status" id="rl-param-status"></div>
+          </div>
+
+          <!-- Live Metrics -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0-1A6 6 0 1 0 8 2a6 6 0 0 0 0 12zM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4zm0 7a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5z"/></svg>
+              Live Metrics
+            </h3>
+            <div class="rl-metrics-grid">
+              <div class="rl-metric-card rl-metric-primary">
+                <span class="rl-metric-label">Learned τ</span>
+                <span class="rl-metric-value" id="rl-metric-tau">—</span>
+              </div>
+              <div class="rl-metric-card">
+                <span class="rl-metric-label">Confidence</span>
+                <span class="rl-metric-value" id="rl-metric-confidence">—</span>
+              </div>
+              <div class="rl-metric-card">
+                <span class="rl-metric-label">F1 Score</span>
+                <span class="rl-metric-value" id="rl-metric-f1">—</span>
+              </div>
+              <div class="rl-metric-card">
+                <span class="rl-metric-label">Reward</span>
+                <span class="rl-metric-value" id="rl-metric-reward">—</span>
+              </div>
+              <div class="rl-metric-card">
+                <span class="rl-metric-label">Epsilon (ε)</span>
+                <span class="rl-metric-value" id="rl-metric-epsilon">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weight Monitor -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 1zm0 10a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 11zm7-3a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM4 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 4 8z"/><circle cx="8" cy="8" r="3"/></svg>
+              Current Weights
+            </h3>
+            <div class="rl-weight-bars">
+              <div class="rl-weight-row">
+                <span class="rl-weight-label" style="color:#ef4444">w₁ Sem</span>
+                <span class="rl-weight-value" id="rl-metric-w1">—</span>
+              </div>
+              <div class="rl-weight-row">
+                <span class="rl-weight-label" style="color:#3b82f6">w₂ Ent</span>
+                <span class="rl-weight-value" id="rl-metric-w2">—</span>
+              </div>
+              <div class="rl-weight-row">
+                <span class="rl-weight-label" style="color:#8b5cf6">w₃ Ref</span>
+                <span class="rl-weight-value" id="rl-metric-w3">—</span>
+              </div>
+              <div class="rl-weight-row">
+                <span class="rl-weight-label" style="color:#f59e0b">λ Cost</span>
+                <span class="rl-weight-value" id="rl-metric-lambda">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Confusion Matrix -->
+          <div class="panel-section">
+            <h3 class="section-title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm1 0v5h6.5V1H2a1 1 0 0 0-1 1zm0 6v6a1 1 0 0 0 1 1h5.5V8H1zm7.5 0v7H14a1 1 0 0 0 1-1V8H8.5zM15 7V2a1 1 0 0 0-1-1H8.5v6H15z"/></svg>
+              Latest Confusion Matrix
+            </h3>
+            <div class="confusion-matrix">
+              <div class="cm-header"></div>
+              <div class="cm-header">Pred<br/>Interrupt</div>
+              <div class="cm-header">Pred<br/>Auto</div>
+              <div class="cm-header">Actual<br/>Needs HITL</div>
+              <div class="cm-cell tp" id="rl-cm-tp">0</div>
+              <div class="cm-cell fn" id="rl-cm-fn">0</div>
+              <div class="cm-header">Actual<br/>No HITL</div>
+              <div class="cm-cell fp" id="rl-cm-fp">0</div>
+              <div class="cm-cell tn" id="rl-cm-tn">0</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Center: Training Charts -->
+        <main id="rl-main">
+          <div class="rl-charts-grid">
+            <div class="chart-card">
+              <h3>Episode Reward</h3>
+              <div class="chart-container">
+                <canvas id="rl-chart-reward"></canvas>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>Learned Threshold (τ) Evolution</h3>
+              <div class="chart-container">
+                <canvas id="rl-chart-threshold"></canvas>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>F1 / Precision / Recall</h3>
+              <div class="chart-container">
+                <canvas id="rl-chart-f1"></canvas>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>Weight Evolution [w₁, w₂, w₃]</h3>
+              <div class="chart-container">
+                <canvas id="rl-chart-weights"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Final Result Card -->
+          <div id="rl-final-result" class="rl-final-result hidden"></div>
+        </main>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
