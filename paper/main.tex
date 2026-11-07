@@ -1,0 +1,1023 @@
+%% ============================================================
+%%  main.tex — IEEE Conference Paper
+%%  "Uncertainty- and Impact-Aware Human-in-the-Loop Gating
+%%   for Multi-Agent Software Engineering"
+%%
+%%  Build:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%%
+%%  Anonymous switch: change \anonymousfalse -> \anonymoustrue
+%%  before blind submission.
+%% ============================================================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+%% -- Packages --------------------------------------------------
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage{balance}
+\usepackage[colorinlistoftodos,prependcaption]{todonotes}
+
+%% -- Anonymous switch ------------------------------------------
+\newif\ifanonymous
+\anonymousfalse   %% Set \anonymoustrue for blind review
+
+%% -- Notation macros -------------------------------------------
+\newcommand{\Usem}{U_{\mathrm{sem}}}
+\newcommand{\Uent}{U_{\mathrm{ent}}}
+\newcommand{\Uref}{U_{\mathrm{ref}}}
+\newcommand{\Tbase}{T_{\mathrm{base}}}
+\newcommand{\Treview}{T_{\mathrm{review}}}
+\newcommand{\Tnorm}{T_{\mathrm{norm}}}
+\newcommand{\Tmin}{T_{\mathrm{min}}}
+\newcommand{\Tmax}{T_{\mathrm{max}}}
+
+%% -- Listings style -------------------------------------------
+\lstdefinestyle{jsonStyle}{
+  basicstyle=\scriptsize\ttfamily,
+  frame=single,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+}
+\lstset{style=jsonStyle}
+
+%% -- BibTeX ----------------------------------------------------
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+%% ============================================================
+\begin{document}
+
+%% -- Title ----------------------------------------------------
+\title{Uncertainty- and Impact-Aware Human-in-the-Loop Gating\\
+       for Multi-Agent Software Engineering}
+
+%% -- Authors --------------------------------------------------
+\ifanonymous
+  \author{\IEEEauthorblockN{Anonymous Authors}
+  \IEEEauthorblockA{Anonymous Institution}}
+\else
+\author{
+\begin{minipage}{\textwidth}
+\centering
+\begin{tabular}{ccc}
+\textbf{Yukthesh Reddy Konda} &
+\textbf{Jayadeep Kundrapu} &
+\textbf{Navneeth Kundrapu} \\
+\textit{Dept.~of CSE} &
+\textit{Dept.~of CSE} &
+\textit{Dept.~of ECE} \\
+\textit{IIIT Naya Raipur, India} &
+\textit{IIIT Naya Raipur, India} &
+\textit{IIIT Naya Raipur, India} \\
+konda23100@iiitnr.edu.in &
+kundrapu23100@iiitnr.edu.in &
+kundrapu23101@iiitnr.edu.in \\
+\end{tabular}
+\vspace{0.5em}\\
+{\large \textbf{Dr.~Mallikharjun Rao K}} \\
+\textit{Data Science and Artificial Intelligence,
+        IIIT Naya Raipur, India} \\
+mallikharjuna@iiitnr.edu.in \quad
+\url{https://orcid.org/0000-0002-6096-3963}
+\end{minipage}
+}
+\fi
+
+\maketitle
+
+%% -- Abstract -------------------------------------------------
+\begin{abstract}
+Autonomous multi-agent systems that orchestrate Large Language Models (LLMs)
+across a software-development life cycle are increasingly capable but remain
+susceptible to hallucinated architectural decisions whose errors compound
+through downstream agents.
+We describe a Human-in-the-Loop (HITL) gating mechanism---the
+\emph{Rejector Gate}---that intercepts each agent output and decides whether
+to route execution to autonomous continuation or to request human review.
+The gate computes a composite uncertainty score $U$ from three signals:
+lexical dispersion across $N$ response variants, normalized decision entropy
+over structured choices, and an LLM-based reflection score.
+$U$ is then scaled by a decision gravity factor $G$, derived from impact,
+irreversibility, and propagation of the decision.
+Intervention is triggered when $S = U \times G$ exceeds an adaptive
+threshold.
+To set that threshold, we formulate the gating problem as an episodic Markov
+Decision Process and train a Deep Q-Network (DQN) using a token-economics
+reward model that analytically derives a large asymmetry between
+false-negative and false-positive penalties (ranging from $3.6\times$ at
+minimum gravity to $79\times$ at maximum).
+A secondary finite-difference optimizer tunes the continuous weighting
+coefficients on a slower timescale.
+We evaluate the system on a simulation environment comprising 20 curated and
+up to 50 procedurally generated architectural decision scenarios per episode.
+Aggregate empirical results on real projects and comparisons against published
+baselines are deferred to future work and listed in the accompanying
+\texttt{TODO.md}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multi-Agent Systems, Human-in-the-Loop, Reinforcement Learning,
+Large Language Models, Software Engineering, Deep Q-Network,
+Uncertainty Estimation, Decision Gravity
+\end{IEEEkeywords}
+
+%% ============================================================
+\section{Introduction}\label{sec:intro}
+%% ============================================================
+
+Large Language Models (LLMs) have become capable collaborators in
+software-engineering tasks~\cite{brown2020gpt3,bubeck2023gpt4,hou2024llmse}.
+Frameworks such as MetaGPT~\cite{hong2024metagpt} and
+ChatDev~\cite{qian2024chatdev} assign specialized \emph{personas}---product
+manager, architect, coder, tester---to LLMs and demonstrate that such
+role-based decomposition improves code quality over monolithic prompting.
+Yet purely autonomous pipelines share a structural vulnerability: when an
+early-stage agent produces an incorrect architectural decision, every
+downstream agent that depends on that decision inherits and amplifies the
+error.
+Mitigating this risk by routing every agent output to a human reviewer
+would eliminate the efficiency gains that motivate
+automation~\cite{horvitz1999principles,amershi2019guidelines}.
+
+The key challenge is therefore \emph{when} to request human review.
+Existing approaches rely either on static confidence thresholds that do not
+adapt to operational context, or on RLHF-style training that aligns model
+weights offline but does not gate runtime
+decisions~\cite{christiano2017rlhf,ouyang2022instructgpt}.
+Selective-prediction and learning-to-defer
+methods~\cite{geifman2017selective,madras2018predict} offer formal frameworks
+for abstaining, but have not been applied to multi-agent software pipelines
+where the \emph{consequences} of an error---not just its probability---
+determine the urgency of intervention.
+
+\textbf{Contributions.} This paper makes three contributions:
+\begin{enumerate}
+  \item \textbf{The Rejector Gate:} a gating mechanism combining three
+        complementary uncertainty signals (lexical dispersion, decision
+        entropy, and LLM reflection) weighted by a decision gravity score
+        to produce a composite gate score $S = U \times G$ that determines
+        routing.
+  \item \textbf{Token-economics reward model:} a reward function derived
+        analytically from estimated token expenditures that produces an
+        asymmetric FN/FP penalty ratio of approximately $21\times$ at medium
+        gravity and $79\times$ at maximum gravity, without hand-tuned
+        constants.
+  \item \textbf{Dual-layer optimization:} a DQN that learns a binary
+        intervention policy from simulated decisions, combined with a
+        finite-difference parameter optimizer that tunes the uncertainty
+        weighting coefficients on a slower timescale.
+\end{enumerate}
+
+\textbf{Paper outline.}
+Section~\ref{sec:related} reviews related work.
+Section~\ref{sec:arch} describes the system architecture.
+Section~\ref{sec:rationale} explains the design rationale.
+Section~\ref{sec:math} presents the mathematical formulation.
+Section~\ref{sec:reward} derives the reward model.
+Section~\ref{sec:rl} describes the learning framework.
+Section~\ref{sec:eval} defines the experimental setup.
+Section~\ref{sec:results} reports results.
+Section~\ref{sec:threats} discusses threats to validity.
+Section~\ref{sec:conclusion} concludes.
+
+%% ============================================================
+\section{Related Work}\label{sec:related}
+%% ============================================================
+
+\subsection{LLMs for Software Engineering}
+Surveys such as Hou et al.~\cite{hou2024llmse} document rapid growth in
+LLM-assisted programming, code review, and test generation.
+SWE-agent~\cite{yang2024sweagent} demonstrates end-to-end issue resolution
+in real repositories.
+Our work differs in that we do not replace the developer but decide
+\emph{dynamically} when their involvement is most valuable.
+
+\subsection{Multi-Agent Frameworks}
+MetaGPT~\cite{hong2024metagpt} encodes software engineering workflows as
+structured LLM conversations with role-based personas.
+ChatDev~\cite{qian2024chatdev} uses a waterfall-style agent chain with
+chat-based inter-agent debate.
+AutoGen~\cite{wu2024autogen} provides a general conversational multi-agent
+framework.
+All three operate with either no gating or static heuristics.
+Our work adds an adaptive gate that interrupts the chain only when both
+uncertainty and decision gravity are high.
+
+\subsection{LLM Uncertainty and Hallucination Detection}
+SelfCheckGPT~\cite{manakul2023selfcheckgpt} detects hallucinations by
+sampling multiple responses and measuring their
+consistency---the same principle underlies our $\Usem$.
+Kuhn et al.~\cite{kuhn2023semantic} introduce semantic entropy, clustering
+semantically equivalent outputs before computing entropy.
+Kadavath et al.~\cite{kadavath2022know} show that LLMs can be calibrated
+to predict their own correctness.
+Our $\Uref$ adopts this idea by prompting the LLM to review its own
+variants, while acknowledging the same-model-family bias this creates.
+
+\subsection{Selective Prediction and Learning to Defer}
+Geifman and El-Yaniv~\cite{geifman2017selective} formulate selective
+prediction as minimizing risk subject to a coverage constraint.
+Madras et al.~\cite{madras2018predict} extend this to a human-AI team where
+deferral decisions consider both accuracy and fairness.
+Our work is in this spirit but grounds the deferral cost in token economics
+rather than a fixed abstention penalty.
+
+\subsection{Human-AI Teaming and Mixed-Initiative Interaction}
+Horvitz~\cite{horvitz1999principles} articulates principles for
+mixed-initiative systems, arguing that control allocation should be
+sensitive to task context.
+Amershi et al.~\cite{amershi2019guidelines} provide empirical guidelines
+for human-AI interaction design.
+Our gate operationalises context-sensitivity through the gravity score $G$.
+
+\subsection{RLHF and Human-in-the-Loop RL}
+Christiano et al.~\cite{christiano2017rlhf} use human preferences to
+shape a reward model for alignment.
+Ouyang et al.~\cite{ouyang2022instructgpt} scale this to instruction-following
+via PPO.
+Both approaches align model weights offline; they do not gate runtime
+decisions.
+Our DQN learns a \emph{runtime} binary policy that decides per-output
+whether to invoke the human, complementing rather than replacing offline
+alignment.
+Active learning~\cite{settles2012active} also queries an oracle selectively,
+but typically assumes a static pool rather than a sequential pipeline.
+
+\subsection{Comparison Summary}
+
+Table~\ref{tab:related} summarises how our system relates to representative
+prior work.
+
+\begin{table}[!t]
+  \caption{Comparison of multi-agent and gating approaches}
+  \label{tab:related}
+  \renewcommand{\arraystretch}{1.2}
+  \resizebox{\columnwidth}{!}{%
+  \begin{tabular}{@{}lp{1.5cm}p{1.5cm}p{0.9cm}p{0.9cm}p{1.0cm}@{}}
+    \toprule
+    \textbf{System} &
+    \textbf{Human Involvement} &
+    \textbf{Uncertainty} &
+    \textbf{Adaptive} &
+    \textbf{Cost Model} &
+    \textbf{Eval.~Scale} \\
+    \midrule
+    MetaGPT~\cite{hong2024metagpt}        & None          & None             & No  & No         & Projects  \\
+    ChatDev~\cite{qian2024chatdev}        & Static review & None             & No  & No         & Projects  \\
+    AutoGen~\cite{wu2024autogen}          & Optional      & None             & No  & No         & Tasks     \\
+    Madras et al.~\cite{madras2018predict}& On defer      & Confidence       & Yes & Coverage   & Benchmarks\\
+    \textbf{Ours}                         & Gate-triggered& $\Usem,\Uent,\Uref$ & Yes & Token econ.& Simulation\\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+
+%% ============================================================
+\section{System Architecture}\label{sec:arch}
+%% ============================================================
+
+\subsection{Target System Class}
+
+The framework targets CRUD web applications with a REST backend:
+projects where the agent chain produces API endpoint definitions,
+relational or document data models, and service-layer code.
+This scope constrains what structured decisions can be extracted for entropy
+computation and what constitutes a recoverable versus catastrophic
+architectural error.
+
+\subsection{Agent Pipeline}
+
+As illustrated in Fig.~\ref{fig:architecture}, requirements flow through
+four specialized agents:
+
+\begin{enumerate}
+  \item \textbf{System Architect:} ingests raw requirements and emits a
+        structured JSON plan containing \texttt{projectName},
+        \texttt{techStack}, a list of \texttt{components} with dependency
+        edges, \texttt{apiEndpoints} (method, path, request/response schema),
+        \texttt{dataModels} with typed fields, and---critically---a list of
+        \texttt{architecturalDecisions}, each recording the decision
+        statement, the options considered, the chosen option, and the
+        agent's reasoning.
+        This field is the primary input for $\Uent$.
+  \item \textbf{Orchestrator:} decomposes the architectural plan into
+        concrete, decoupled tasks assigned to domain-specific agents.
+  \item \textbf{Frontend Agent:} generates UI code, routing, and
+        schema-validation logic.
+  \item \textbf{Backend Agent:} generates data-access layer code,
+        API route handlers, and authentication logic.
+\end{enumerate}
+
+No ``Integrator Agent'' is present in the current implementation.
+
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/architecture.pdf}
+  \caption{System Architecture. Requirements flow through the System
+           Architect, Orchestrator, and Implementation agents.
+           The Rejector Gate intercepts each agent's output before
+           it is passed downstream.}
+  \label{fig:architecture}
+  \todo[color=orange!60,inline]{Regenerate as vector PDF/TikZ.
+  Fix ``System Architech'' typo from original figure.
+  Remove Integrator Agent (not implemented). See TODO.md item 11.}
+\end{figure}
+
+\subsection{The Rejector Gate}\label{subsec:rejector}
+
+After each agent produces its primary output, the Rejector Gate intercepts
+it before the next agent receives it (see Fig.~\ref{fig:rejector}).
+The gate: (i)~generates $N{-}1$ additional response variants at temperature
+$T{=}1.0$, forming a set of $N$~variants (default $N{=}3$);
+(ii)~computes composite uncertainty $U$ from three signals;
+(iii)~obtains decision gravity $G$ via an independent LLM assessment;
+(iv)~computes gate score $S = U \times G$;
+(v)~routes to \textsc{Collaborate} if $S > \tau$ (default $\tau = 0.15$)
+or to \textsc{Automate} otherwise.
+
+\begin{figure}[!h]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/rejector_gate.pdf}
+  \caption{Rejector Gate flow logic. The gate evaluates the agent's output
+           against a threshold $\tau$ and routes to either Automate
+           (proceed to next agent) or Collaborate (request human review).}
+  \label{fig:rejector}
+  \todo[color=orange!60,inline]{Regenerate as vector PDF/TikZ.
+  See TODO.md item 12.}
+\end{figure}
+
+\subsection{Motivating Example}\label{subsec:example}
+
+Consider the \emph{Monolith vs.\ Microservices} decision (impact $I{=}0.9$,
+irreversibility $R{=}0.9$, propagation $P{=}1.0$; from preset scenario
+\texttt{arch-pattern}).
+Three variants are generated.
+Variant~1 chooses Microservices citing scalability; Variant~2 chooses Monolith
+citing team size; Variant~3 is split.
+Pairwise cosine similarity of TF vectors averages $0.52$, giving
+$\Usem{=}0.48$.
+Parsing the \texttt{architecturalDecisions} field reveals two distinct choices,
+yielding $\Uent \approx 1.00$ (maximum entropy for $n{=}2$ options).
+The reflection LLM reports $\mathrm{agreement}{=}0.45$ with one high-severity
+conflict (\textit{scaling strategy unclear}), giving $\Uref{=}0.55$.
+With weights $(w_1,w_2,w_3){=}(0.40,0.35,0.25)$:
+$U = 0.40{\times}0.48 + 0.35{\times}1.00 + 0.25{\times}0.55 = 0.68$.
+Gravity $G = 0.9 \times 0.9 \times 1.0 = 0.81$.
+Gate score $S = 0.68 \times 0.81 = 0.55 > 0.15 = \tau$:
+\textsc{Collaborate}.
+A human developer is alerted, selects Microservices with explicit scalability
+annotations, and downstream agents propagate that choice consistently.
+
+\subsection{System Architect Output}
+
+Listing~\ref{lst:architect} shows an excerpt of the structured JSON output.
+The \texttt{architecturalDecisions} array provides the structured signal for
+$\Uent$.
+
+\begin{lstlisting}[caption={Excerpt: System Architect JSON output},
+                   label={lst:architect},
+                   style=jsonStyle]
+{
+  "projectName": "eCommerce REST API",
+  "techStack": {
+    "frontend": "React",
+    "backend": "NestJS",
+    "database": "PostgreSQL"
+  },
+  "apiEndpoints": [
+    { "method": "POST", "path": "/api/orders",
+      "requestBody": "OrderDto",
+      "responseBody": "OrderEntity" }
+  ],
+  "architecturalDecisions": [
+    {
+      "decision": "Backend framework",
+      "options": ["Express", "NestJS"],
+      "chosen": "NestJS",
+      "reasoning": "Structured DI container reduces coupling",
+      "category": "architecture"
+    }
+  ]
+}
+\end{lstlisting}
+
+%% ============================================================
+\section{Design Rationale}\label{sec:rationale}
+%% ============================================================
+
+\textbf{Why three uncertainty signals?}
+Each signal captures a structurally different failure mode.
+Lexical dispersion ($\Usem$) detects when the agent produces responses whose
+surface forms diverge widely---a symptom of ambiguous or underdetermined
+prompts.
+Decision entropy ($\Uent$) captures inconsistency in the \emph{discrete}
+architectural choices themselves across variants, independent of lexical
+style.
+The reflection score ($\Uref$) uses an LLM to identify semantic
+contradictions and factual conflicts that the variance-based metrics may miss
+when variants are lexically similar but logically contradictory.
+
+\textbf{Why decision gravity?}
+Uncertainty alone does not determine whether human review is warranted.
+A fully reversible formatting choice may have high $\Usem$ without requiring
+intervention; a schema migration with unanimous but incorrect LLM agreement
+may have low $U$ but severe consequences.
+Multiplying by $G$ ensures that only high-consequence uncertain decisions
+trigger interruptions.
+
+\textbf{Why RL?}
+A fixed threshold $\tau$ cannot adapt to shifts in the scenario distribution
+or to evolving LLM calibration.
+The DQN learns which $(U, G, S)$ configurations lead to positive outcomes
+across a large simulated distribution.
+Without RL, the system functions with fixed $\tau{=}0.15$; the RL layer
+adds adaptive calibration.
+\todo[color=red!40]{Run ablation comparing fixed $\tau$ vs.~RL policy.
+See TODO.md item 3.}
+
+\textbf{Why are FP/TN human-side and TP/FN system-side?}
+When the gate triggers unnecessarily (FP) or correctly withholds a safe
+decision (TN), a reviewer pays a fixed cost $\Treview$~tokens regardless of
+architectural significance.
+When the gate correctly catches a problem (TP) or misses one (FN), the cost
+scales with the complexity and reversibility of the task.
+This asymmetry is encoded in the reward model (Section~\ref{sec:reward}).
+
+%% ============================================================
+\section{Mathematical Formulation}\label{sec:math}
+%% ============================================================
+
+\subsection{Lexical Dispersion (\texorpdfstring{$\Usem$}{Usem})}
+
+Each of the $N$ variant texts is converted to a term-frequency (TF) sparse
+vector $\mathbf{v}_i$ by tokenising on whitespace, discarding tokens of
+length $\leq 2$, and normalising counts by total token count.
+Pairwise cosine similarity is computed for all $\binom{N}{2}$ pairs:
+\begin{equation}
+  \label{eq:usem}
+  \Usem = 1 - \frac{1}{\binom{N}{2}}
+          \sum_{i < j}
+          \frac{\mathbf{v}_i \cdot \mathbf{v}_j}
+               {\|\mathbf{v}_i\|\,\|\mathbf{v}_j\|}
+\end{equation}
+For $N{=}3$ this yields three pairs.
+$\Usem \in [0,1]$ by construction: identical responses give $\Usem{=}0$;
+completely disjoint vocabularies give $\Usem{=}1$.
+
+\noindent\textit{Note on simulation vs.~live pipeline:}
+The RL simulation module uses 8-dimensional unit-normalised random vectors
+with controlled perturbation noise as a proxy for embeddings (see
+\texttt{src/simulation/scenarios.js:17--32}).
+Equation~\eqref{eq:usem} describes the live gating pipeline in
+\texttt{src/agents/rejector.js:66--84}.
+
+\subsection{Decision Entropy (\texorpdfstring{$\Uent$}{Uent})}
+
+The Rejector parses \texttt{architecturalDecisions[$k$].chosen} from each
+variant.
+Let $k = 1,\ldots,K$ index distinct decision points and $n_k$ denote the
+number of unique choices observed across $N$ variants for point $k$.
+\begin{equation}
+  \label{eq:uent}
+  \Uent = \frac{1}{K} \sum_{k=1}^{K}
+          \frac{-\sum_{i=1}^{n_k} p_{ki} \log_2 p_{ki}}{\log_2 n_k}
+\end{equation}
+where $p_{ki}$ is the fraction of variants choosing option $i$ at point $k$.
+When $n_k{=}1$ (unanimous), the term is zero and is excluded, avoiding
+division by zero.
+When no decision points can be parsed, $\Uent{=}0$.
+
+\subsection{Reflection Score (\texorpdfstring{$\Uref$}{Uref})}
+
+An independent LLM call (model: \texttt{gpt-4o-mini}, $T{=}0.2$) reviews all
+$N$ variants using the prompt:
+\begin{quote}\footnotesize
+``Compare these $N$ responses from agent \textit{name}.
+Return JSON: \texttt{\{agreement: float, conflicts: [...],
+severity\_scores: [...]\}}.''
+\end{quote}
+Let $a \in [0,1]$ be the reported agreement and $\bar{s}$ the mean conflict
+severity.
+\begin{equation}
+  \label{eq:uref}
+  \Uref = \max\!\left(1 - a,\; \bar{s}\,(1-a)\right)
+\end{equation}
+\textit{Limitation:} the reviewing model is in the same model family as the
+generation model; shared biases may cause the reviewer to overlook systematic
+errors (see Section~\ref{sec:threats}).
+
+\subsection{Composite Uncertainty}
+\begin{equation}
+  \label{eq:composite}
+  U = w_1 \Usem + w_2 \Uent + w_3 \Uref, \qquad
+  \sum_{i=1}^{3} w_i = 1
+\end{equation}
+Default initial weights: $(w_1, w_2, w_3) = (0.40, 0.35, 0.25)$.
+
+\textbf{Agent-name heuristic (current implementation).}
+The current implementation (\texttt{rejector.js:352--358}) applies
+hard-coded per-agent-role adjustments: for the System Architect, $U$ is
+shifted by $+0.3$ and clamped to $[0.45, 0.55]$; for implementation agents,
+$U$ is scaled by $0.3$ and clamped to $[0.03, 0.20]$.
+This embeds a prior that strategic decisions are more uncertain than
+implementation decisions.
+Any ``Strategic Entropy'' pattern observed across agent roles in the current
+system is an artefact of this prior, not an emergent signal.
+\todo[color=red!40]{Remove heuristic clamps and re-evaluate whether
+$\Usem,\Uent,\Uref$ naturally stratify by agent role.
+See TODO.md item 6.}
+
+\subsection{Decision Gravity}
+
+Gravity $G$ is assessed by an LLM call (\texttt{gpt-4o-mini}, $T{=}0.2$)
+that rates three dimensions of the agent's output:
+
+\begin{itemize}
+  \item \textbf{Impact ($I$):} severity of potential failure (0 = cosmetic
+        defect; 1 = data corruption or service outage).
+  \item \textbf{Irreversibility ($R$):} difficulty of correcting post-deploy
+        (0 = single config change; 1 = data loss or broken contracts).
+  \item \textbf{Propagation ($P$):} blast radius across the codebase
+        (0 = single function; 1 = entire architecture).
+\end{itemize}
+
+The current implementation computes:
+\begin{equation}
+  \label{eq:gravity}
+  G = I \times R \times P
+\end{equation}
+
+\noindent\textbf{Known limitation:}
+If any single factor is zero, $G$ collapses to zero regardless of others.
+A floored geometric mean $G = (\max(I,\varepsilon) \cdot \max(R,\varepsilon)
+\cdot \max(P,\varepsilon))^{1/3}$ with $\varepsilon{=}0.05$ would be more
+robust~\cite{geifman2017selective}.
+\todo[color=orange!60]{Update \texttt{gravityCalc.js} to use floored
+geometric mean. See TODO.md item 7.}
+
+\subsection{Gate Score and Decision Rule}
+\begin{equation}
+  \label{eq:gate}
+  S = U \times G, \qquad
+  \mathrm{action} =
+  \begin{cases}
+    \textsc{Collaborate} & S > \tau \\
+    \textsc{Automate}    & \text{otherwise}
+  \end{cases}
+\end{equation}
+Default $\tau = 0.15$ (from \texttt{rejector.js:322}).
+
+%% ============================================================
+\section{Token-Economics Reward Model}\label{sec:reward}
+%% ============================================================
+
+\subsection{Cost Asymmetry}
+
+Table~\ref{tab:cost_asymmetry} distinguishes two outcome classes by which
+party bears the cost and how that cost scales with gravity.
+
+\begin{table}[!t]
+  \caption{Cost asymmetry between human-effort and system-risk outcomes}
+  \label{tab:cost_asymmetry}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{|>{\centering\bfseries\small}m{1.9cm}|
+                   >{\small}m{5.6cm}|}
+    \hline
+    Cost class & What the cost represents \\
+    \hline
+    Human-effort outcomes (TN, FP) &
+      Reviewer pays a fixed overhead $\Treview$ per inspection, independent
+      of architectural severity.
+      Excessive FPs increase reviewer fatigue without proportional benefit.
+      Gravity $G$ does not scale this cost. \\
+    \hline
+    System-risk outcomes (TP, FN) &
+      Cost scales with task complexity $\Tbase$ and rework multiplier
+      $\kappa(R)$.
+      Missing a high-gravity error (FN) is far more costly than missing a
+      low-gravity one; catching it (TP) correspondingly averts more waste.
+      Gravity $G$ determines $\Tbase$ and $\kappa$. \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsection{Parameter Definitions}
+
+All parameters in Table~\ref{tab:params} are taken directly from
+\texttt{src/rl/tokenCostModel.js:32--36}.
+
+\begin{table}[!t]
+  \caption{Token-cost model parameters (source: \texttt{tokenCostModel.js})}
+  \label{tab:params}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}cllp{3.2cm}@{}}
+    \toprule
+    Symbol & Value & Unit & Rationale \\
+    \midrule
+    $\Tmin$    & 500      & tokens & Minimal task (config flag) \\
+    $\Tmax$    & 10{,}000 & tokens & Full architectural refactor \\
+    $\Treview$ & 800      & tokens & Human read + correction overhead \\
+    $\alpha$   & 2.5      & ---    & Max rework ceiling multiplier \\
+    $\eta$     & 0.6      & ---    & TN efficiency discount \\
+    $\Tnorm$   & 45{,}000 & tokens & $\Tmax(2{+}\alpha)$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Reward Formulation}
+
+Let $\Phi(I,P) = (I+P)/2$.
+The base token cost is:
+\begin{equation}
+  \label{eq:tbase}
+  \Tbase(I,P) = \Tmin + (\Tmax - \Tmin)\,\Phi(I,P)
+\end{equation}
+The rework multiplier accounts for fixing a flawed implementation:
+\begin{equation}
+  \label{eq:kappa}
+  \kappa(R) = 1 + \alpha \cdot R
+\end{equation}
+The four reward values, normalised by $\Tnorm$, are given in
+Table~\ref{tab:rewards}.
+
+\begin{table}[!t]
+  \caption{Token-cost based reward formulation for each gate outcome}
+  \label{tab:rewards}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabularx}{\columnwidth}{@{}lXp{2.2cm}@{}}
+    \toprule
+    \textbf{Outcome} & \textbf{Reward} & \textbf{Interpretation} \\
+    \midrule
+    True Positive (TP) &
+      $\displaystyle+\frac{\Tbase}{\Tnorm}$ &
+      Tokens saved by catching the error \\[6pt]
+    False Negative (FN) &
+      $\displaystyle-\frac{\Tbase(1+\kappa)}{\Tnorm}$ &
+      Wasted work plus rework cost \\[6pt]
+    True Negative (TN) &
+      $\displaystyle+\frac{\Tbase\cdot\eta}{\Tnorm}$ &
+      Efficient autonomous execution \\[6pt]
+    False Positive (FP) &
+      $\displaystyle-\frac{\Treview}{\Tnorm}$ &
+      Unnecessary review overhead \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{FN/FP Penalty Asymmetry}\label{subsec:asymmetry}
+
+Using $\Treview{=}800$, $\Tnorm{=}45{,}000$, and
+$|R_{\mathrm{FP}}| = 800/45{,}000 \approx 0.0178$:
+
+\begin{itemize}
+  \item \textbf{Low gravity} ($I{=}R{=}P{=}0.1$):
+        $\Tbase{=}1{,}450$, $\kappa{=}1.25$,
+        ratio $\approx 3.6\times$
+  \item \textbf{Medium gravity} ($I{=}R{=}P{=}0.5$):
+        $\Tbase{=}5{,}250$, $\kappa{=}2.25$,
+        ratio $\approx 21.3\times$
+  \item \textbf{High gravity} ($I{=}R{=}P{=}1.0$):
+        $\Tbase{=}10{,}000$, $\kappa{=}3.5$,
+        ratio $\approx 79\times$
+\end{itemize}
+
+This graduated asymmetry encodes a safety-first preference: missing a
+catastrophic error is penalised far more than an unnecessary review, without
+relying on hand-tuned penalty constants.
+
+%% ============================================================
+\section{Learning Framework}\label{sec:rl}
+%% ============================================================
+
+\subsection{MDP Formulation}
+
+We model gating as an episodic MDP.
+One episode consists of evaluating a shuffled batch of $M$ scenarios
+sequentially.
+
+\textbf{State space:}
+\begin{equation}
+  \label{eq:state}
+  s_t = [\Usem,\;\Uent,\;\Uref,\;I,\;R,\;P,\;S] \in \mathbb{R}^7
+\end{equation}
+Each component is normalised to $[0,1]$.
+
+\textbf{Action space:}
+$a_t \in \{0 : \textsc{Automate},\; 1 : \textsc{Collaborate}\}$
+
+\textbf{Reward:} $r_t$ is selected from Table~\ref{tab:rewards} based on
+the classification of $(a_t, \mathrm{gt}_t)$.
+
+\textbf{Discount:} $\gamma = 0.99$.
+Although consecutive scenarios in a shuffled episode have weak temporal
+dependence, the full MDP formulation allows the agent to internalise
+long-horizon trade-offs between intervention rate and accumulated token cost.
+
+\subsection{Layer 1: Deep Q-Network}
+
+The intervention policy is learned by a DQN~\cite{mnih2015dqn}.
+Table~\ref{tab:dqn} lists all hyperparameters, verified from
+\texttt{src/rl/dqnAgent.js}.
+
+\begin{table}[!t]
+  \caption{DQN hyperparameters (source: \texttt{dqnAgent.js})}
+  \label{tab:dqn}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Parameter & Value \\
+    \midrule
+    Discount $\gamma$               & 0.99 \\
+    Learning rate                   & 0.001 \\
+    Batch size                      & 64 \\
+    Replay buffer capacity          & 10{,}000 \\
+    Target network update period    & every 100 steps \\
+    Soft-update coefficient $\tau_{\rm soft}$ & 0.01 \\
+    $\varepsilon$ schedule          & $1.0 \to 0.05$, ${\times}0.995$/step \\
+    Hidden layers                   & [64, 32] \\
+    Activations                     & ReLU (hidden), Linear (output) \\
+    Initialisation                  & Xavier: $\sqrt{2/(n_{\rm in}+n_{\rm out})}$ \\
+    Optimiser                       & Adam ($\beta_1{=}0.9$, $\beta_2{=}0.999$, $\varepsilon{=}10^{-8}$) \\
+    Loss                            & Huber ($\delta{=}1.0$) \\
+    Training episodes               & 500 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The Bellman target is:
+$\hat{Q}(s_t,a_t) = r_t + \gamma \max_{a'} Q^{-}(s_{t+1}, a'; \theta^-)$,
+where $\theta^-$ are target-network parameters.
+
+\textbf{Relationship to threshold $\tau$:}
+In the live pipeline, routing uses $S > \tau$.
+In simulation, the DQN directly selects action $a_t$, learning which
+$(U,G,S)$ configurations should trigger intervention.
+The learned decision boundary on $S$ can be recovered by probing
+$Q(s,a)$ at varying score levels (implemented in
+\texttt{dqnAgent.js:163--206}).
+
+\subsection{Layer 2: Finite-Difference Parameter Optimisation}
+\label{subsec:fd}
+
+Operating every 25 episodes, a secondary optimiser tunes the pre-softmax
+logits $\boldsymbol{\theta} \in \mathbb{R}^3$ for $(w_1,w_2,w_3)$.
+
+\textbf{Method:}
+This is a \emph{finite-difference / evolution-strategy} gradient
+estimator~\cite{settles2012active}, not true REINFORCE~\cite{williams1992reinforce}
+(which requires a stochastic policy with log-probability gradients).
+Central differences:
+\begin{equation}
+  \label{eq:fd}
+  \frac{\partial J}{\partial \theta_i} \approx
+  \frac{J(\boldsymbol{\theta} + \delta\mathbf{e}_i)
+      - J(\boldsymbol{\theta} - \delta\mathbf{e}_i)}{2\delta}
+\end{equation}
+where $J$ is the episode return evaluated by running the current DQN
+greedily, perturbation $\delta{=}0.05$.
+Gradients are applied with momentum ($\beta{=}0.9$, lr$=0.01$).
+Weights are obtained via softmax to enforce $\sum w_i{=}1$.
+
+\textbf{Note on $\lambda$:}
+The optimiser also maintains a parameter $\lambda$ that is updated but not
+consumed by the reward model in the current implementation.
+\todo[color=red!40]{Either wire $\lambda$ into the reward (e.g., as a
+multiplier on $\Treview$) or remove it.
+See TODO.md item 8.}
+
+%% ============================================================
+\section{Experimental Setup}\label{sec:eval}
+%% ============================================================
+
+\subsection{Research Questions}
+
+\begin{description}
+  \item[RQ1] Does the RL gate reduce the false-negative rate compared to
+        fixed-threshold and always-automate baselines?
+  \item[RQ2] What is the intervention-rate / false-negative-rate trade-off
+        curve for different gate configurations?
+  \item[RQ3] Which uncertainty component contributes most to gate performance?
+        (Ablation over individual signals and their combinations.)
+  \item[RQ4] Does removing the agent-name heuristic clamp change performance,
+        and does the strategic-entropy pattern persist?
+  \item[RQ5] How does the learned decision boundary vary across decision
+        categories (Architecture, Security, Infrastructure, Frontend)?
+\end{description}
+
+\subsection{Simulation Environment}
+
+The environment (\texttt{src/rl/environment.js}) presents scenarios one at a
+time to the DQN.
+Each episode uses a shuffled batch of:
+\begin{itemize}
+  \item \textbf{20 preset scenarios:} curated architectural decisions with
+        manually assigned $(I, R, P)$ and human-readable ground-truth labels
+        (8 require human review; 12 do not).
+        These labels serve as \emph{simulator reference labels} assigned by
+        the authors; they are not independent human annotations.
+  \item \textbf{50 procedurally generated scenarios:} drawn from a seeded
+        pseudo-random generator (Mulberry32).
+        Ground truth uses the heuristic:
+        $\mathrm{needsHuman} = (G{>}0.3 \land a{<}0.7) \lor
+        (G{>}0.5 \land \mathrm{rng}{>}0.5)$,
+        where $a$ is LLM agreement and $G = I{\times}R{\times}P$.
+\end{itemize}
+
+\noindent\textbf{Reproducibility note:}
+In the current implementation, the random batch is seeded with
+\texttt{Date.now()}, making episodes irreproducible across runs.
+\todo[color=red!40]{Fix PRNG seed to a constant (e.g., 42) for evaluation.
+See TODO.md item 5.}
+
+\subsection{System Under Test}
+
+\begin{itemize}
+  \item Runtime: Node.js (ESM modules, \texttt{type: "module"})
+  \item LLM: \texttt{gpt-4o-mini} (default; configurable via
+        \texttt{OPENAI\_MODEL} env variable; source: \texttt{llmClient.js:9})
+  \item Generation temperature: $T{=}1.0$ (fixed by provider constraint;
+        source: \texttt{llmClient.js:39})
+  \item Reflection/gravity temperature: $T{=}0.2$
+  \item $N{=}3$ variants per gate evaluation
+\end{itemize}
+
+\subsection{Baselines}
+
+\begin{enumerate}
+  \item \textbf{Always Automate:} zero interventions (lower bound on human effort)
+  \item \textbf{Always Intervene:} all outputs reviewed (upper bound on safety)
+  \item \textbf{Static threshold on $U$ alone} ($\tau_U$)
+  \item \textbf{Static threshold on $S$} ($\tau_S{=}0.15$)
+  \item \textbf{Our RL gate} (DQN + FD parameter optimizer)
+  \item MetaGPT / ChatDev without gate
+        \todo[color=orange!60]{Requires external setup. See TODO.md item 4.}
+\end{enumerate}
+
+\subsection{Metrics}
+
+False-negative rate (FNR), false-positive rate (FPR), precision, recall,
+F1, intervention rate, automation rate, total token cost including gate
+overhead ($N$ generation calls and one reflection call per evaluation),
+95\% confidence intervals, and paired Wilcoxon significance test.
+\todo[color=red!40]{No result logs exist. Run experiments and populate
+Section~\ref{sec:results}. See TODO.md item 2.}
+
+%% ============================================================
+\section{Results}\label{sec:results}
+%% ============================================================
+
+\subsection{Illustrative Case Study}
+
+Table~\ref{tab:case_study} presents a single-project walkthrough of the
+Rejector Gate.
+This is an \emph{illustrative example}---not a systematic experiment---intended
+to show the range of gate scores produced by the pipeline.
+All six values are from one project run; no statistical claims are drawn
+from this table alone.
+
+\begin{table}[!t]
+  \caption{Illustrative case study: single-project walkthrough
+           ($\tau = 0.15$)}
+  \label{tab:case_study}
+  \renewcommand{\arraystretch}{1.2}
+  \resizebox{\columnwidth}{!}{%
+  \begin{tabular}{@{}lccclp{2.6cm}@{}}
+    \toprule
+    \textbf{Agent} & $U$ & $G$ & $S$ & \textbf{Action} & \textbf{Outcome} \\
+    \midrule
+    System Architect & 0.496 & 0.390 & 0.194 & Collaborate &
+      Resolved Express vs.~NestJS conflict \\
+    Orchestrator     & 0.413 & 0.459 & 0.190 & Collaborate &
+      Aligned project structure and API paths \\
+    Frontend (FE-1)  & 0.082 & 0.300 & 0.025 & Automate &
+      Generated routing shell \\
+    Frontend (FE-2)  & 0.031 & 0.280 & 0.009 & Automate &
+      Generated Zod validation schemas \\
+    Backend (BE-1)   & 0.180 & 0.420 & 0.075 & Automate &
+      Generated Prisma/DB layer \\
+    Backend (BE-2)   & 0.100 & 0.390 & 0.039 & Automate &
+      Generated authentication logic \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+
+The pattern visible in Table~\ref{tab:case_study}---higher $U$ for strategic
+agents---is consistent with the agent-name heuristic override
+(Section~\ref{sec:math}).
+Whether the pattern emerges without the override is deferred to RQ4.
+
+\subsection{Aggregate Performance}
+\todo[color=red!40]{Run 500-episode training, log per-episode F1, FNR, FPR,
+intervention rate. Report mean $\pm$ 95\% CI for each baseline.
+See TODO.md items 2 and 4.}
+
+\subsection{Ablation Study}
+\todo[color=red!40]{Train and evaluate 7 ablation variants:
+each uncertainty signal alone, all three without $G$, full system,
+product vs.~floored geometric mean for $G$.
+See TODO.md item 3.}
+
+\subsection{Consensus Hallucination}
+
+A known failure mode is \emph{consensus hallucination}: all $N$ variants
+converge on an incorrect or non-existent choice, yielding low $\Usem$ and
+low $\Uent$.
+In such cases, only $\Uref$ (the LLM reviewer) or the gravity score $G$
+can prevent silent automation.
+When $G$ is high, $S$ remains above $\tau$ even if $U$ is low.
+However, $G$ does not itself detect the hallucination; it enforces review
+when stakes are high, increasing the chance a human catches the error.
+Eliminating consensus hallucination requires improving $\Uref$ or using
+a cross-model reviewer.
+
+%% ============================================================
+\section{Threats to Validity}\label{sec:threats}
+%% ============================================================
+
+\textbf{Internal validity.}
+Ground-truth labels for preset scenarios were assigned by the authors, not
+independent annotators, and no inter-rater agreement is reported.
+Ground truth for procedurally generated scenarios is a heuristic rule.
+Both sources risk circular evaluation.
+
+\textbf{External validity.}
+All quantitative results derive from simulation.
+The system targets CRUD REST applications; results may not generalise to
+other domains.
+The LLM is \texttt{gpt-4o-mini}; gravity and reflection assessments will
+differ with other models.
+Temperature is fixed at 1.0 by provider constraints.
+
+\textbf{Construct validity.}
+Lexical dispersion captures surface-form variance, not semantic variance
+in the sense of Kuhn et al.~\cite{kuhn2023semantic}.
+Decision entropy requires parseable JSON; non-compliant outputs fall back
+to heuristics that may be inaccurate.
+Gravity is self-assessed by the LLM producing the output, introducing
+potential overconfidence or recency bias.
+
+\textbf{Simulation bias.}
+Preset scenario parameters $(I,R,P)$ reflect the authors' domain judgments.
+Random parameters are sampled uniformly over $[0,1]$, which may not reflect
+real project distributions.
+
+\textbf{Same-model reflection.}
+Using the same model family (\texttt{gpt-4o-mini}) to generate and to
+critique variants may cause systematic blind spots where the reviewer
+replicates the generator's errors.
+
+\textbf{Perfect-human assumption.}
+When intervention is triggered, the system assumes the human correction is
+correct.
+In practice, reviewers may introduce errors under cognitive fatigue from
+excessive false positives.
+
+%% ============================================================
+\section{Conclusion}\label{sec:conclusion}
+%% ============================================================
+
+We presented a Human-in-the-Loop gating framework for multi-agent software
+engineering combining three complementary uncertainty signals---lexical
+dispersion, decision entropy, and LLM reflection---weighted by a decision
+gravity factor to produce a composite gate score $S = U \times G$.
+A Deep Q-Network, trained against a token-economics reward model with
+analytically derived FN/FP asymmetry (ranging from $3.6\times$ at minimum
+gravity to $79\times$ at maximum), learns a binary intervention policy over
+a simulated distribution of 70 architectural decision scenarios per episode.
+A finite-difference parameter optimizer tunes the uncertainty weighting
+coefficients on a slower timescale.
+
+Several important limitations remain open: the agent-name heuristic makes
+the strategic-entropy pattern a tautology in the current implementation;
+the gravity formula is vulnerable to zero-valued factors; and no controlled
+comparison against published baselines has been conducted.
+Collecting independent ground-truth labels, running systematic ablation
+experiments, removing the agent-name heuristic, and validating on real
+software projects constitute the principal directions for future work.
+
+%% -- Data and Code Availability -------------------------------
+\section*{Data and Code Availability}
+\ifanonymous
+  Code and simulation data will be made available upon acceptance.
+\else
+  The simulation code is available at:
+  \url{https://github.com/c3-kyr/Agentic-Software-Development-with-Guardrails}
+\fi
+
+%% -- References -----------------------------------------------
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

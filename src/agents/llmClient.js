@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 
 let openai = null;
-const MODEL = 'gpt-5.4';
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 /**
  * Initialize the OpenAI client
